@@ -1,0 +1,88 @@
+/* Ajustes dinâmicos da HMI sobre o visual do protótipo Stitch. */
+:root { color-scheme: light; }
+body { min-width: 320px; min-height: 100vh; }
+
+.hmi-navigation {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  min-height: 46px;
+  padding: .35rem clamp(1rem, 4vw, 2.5rem);
+  background: #fff;
+  border-bottom: 1px solid #cbd5e1;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 5%);
+}
+.hmi-navigation__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: .45rem .8rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #475569;
+  font: 600 .78rem Inter, system-ui, sans-serif;
+  text-decoration: none;
+}
+.hmi-navigation__link:hover { background: #f1f5f9; color: #0b4f9c; }
+.hmi-navigation__link--active { background: #eaf2fb; border-color: #c5d9ef; color: #0b4f9c; }
+
+#device-status-val[data-state="online"] { color: #34d399; }
+#device-status-val[data-state="offline"],
+#device-status-val[data-state="erro"] { color: #f87171; }
+#device-status-val[data-state="unknown"] { color: #cbd5e1; }
+
+#comm-status-val[data-state="online"] { color: #34d399; }
+#comm-status-val[data-state="offline"] { color: #fca5a5; }
+
+#rfid-status-badge[data-state="identified"] { background: #10b981; }
+#rfid-status-badge[data-state="waiting"] { background: #94a3b8; }
+
+#process-status-container[data-state="em_execucao"],
+#process-status-container[data-state="executando"] {
+  border-color: #86efac;
+  background: #dcfce7;
+  color: #166534;
+}
+#process-status-container[data-state="concluida"],
+#process-status-container[data-state="concluido"] {
+  border-color: #7dd3fc;
+  background: #e0f2fe;
+  color: #075985;
+}
+#process-status-container[data-state="erro"] {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #991b1b;
+}
+#process-status-container[data-state="pendente"],
+#process-status-container[data-state="aguardando"],
+#process-status-container[data-state="cancelada"] {
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+#motor-state-badge[data-state="executando"],
+#motor-state-badge[data-state="em_execucao"] {
+  border-color: #86efac;
+  background: #dcfce7;
+  color: #166534;
+}
+#motor-state-badge[data-state="erro"] {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #991b1b;
+}
+#motor-state-badge[data-state="unknown"] {
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+button:disabled { cursor: not-allowed; opacity: .55; filter: grayscale(.35); }
+#api-status-val[data-state="online"] { color: #166534; }
+#api-status-val[data-state="offline"] { color: #991b1b; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

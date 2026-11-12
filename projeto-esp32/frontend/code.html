@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema de Controle e Supervisão ESP32 - HMI Industrial</title>
+  <link rel="stylesheet" href="css/style.css">
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+            tech: ['Chakra Petch', 'Inter', 'sans-serif'],
+          },
+          colors: {
+            industrial: {
+              header: '#0F1E36',     // Azul escuro cabeçalho
+              headerBorder: '#1E3A5F',
+              primary: '#0B4F9C',    // Azul industrial de ação / principal
+              primaryHover: '#083D7A',
+              accent: '#0284C7',     // Azul claro destaque
+              subtle: '#E2E8F0',
+              canvas: '#F1F5F9',     // Fundo cinza neutro técnico claro
+              panel: '#FFFFFF',
+              panelBorder: '#CBD5E1',
+              textMain: '#0F172A',
+              textMuted: '#475569',
+              textSubtle: '#64748B',
+            },
+            status: {
+              ok: '#16A34A',
+              okBg: '#DCFCE7',
+              okBorder: '#86EFAC',
+              warn: '#CA8A04',
+              warnBg: '#FEF9C3',
+              warnBorder: '#FDE047',
+              danger: '#DC2626',
+              dangerBg: '#FEE2E2',
+              dangerBorder: '#FCA5A5',
+              info: '#0284C7',
+              infoBg: '#E0F2FE',
+              infoBorder: '#BAE6FD',
+              idle: '#64748B',
+              idleBg: '#F1F5F9',
+              idleBorder: '#CBD5E1'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* HMI Clean industrial styles */
+    body {
+      background-color: #F1F5F9;
+      color: #0F172A;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Subtle pulse for active operational indicator */
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.15); opacity: 0.3; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+    .pulse-ring-active {
+      animation: pulse-ring 2s infinite ease-in-out;
+    }
+
+    /* Step motor disc rotation indicator */
+    @keyframes spin-clockwise {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes spin-counterclockwise {
+      from { transform: rotate(360deg); }
+      to { transform: rotate(0deg); }
+    }
+    .motor-rot-cw {
+      animation: spin-clockwise 2.4s linear infinite;
+    }
+    .motor-rot-ccw {
+      animation: spin-counterclockwise 2.4s linear infinite;
+    }
+    .motor-rot-paused {
+      animation-play-state: paused !important;
+    }
+
+    /* Grid layout adjustments for single screen HMI fit */
+    @media (min-height: 800px) and (min-width: 1024px) {
+      .hmi-screen-container {
+        height: 100vh;
+        max-height: 100vh;
+        overflow: hidden;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col font-sans bg-industrial-canvas text-industrial-textMain">
+
+  <!-- ========================================== -->
+  <!-- 1. CABEÇALHO INDUSTRIAL SUPERIOR (HEADER) -->
+  <!-- ========================================== -->
+  <header class="bg-industrial-header text-white px-6 py-3.5 border-b-2 border-industrial-headerBorder flex flex-wrap items-center justify-between shadow-md shrink-0">
+    <!-- Título do Sistema & Identificação -->
+    <div class="flex items-center space-x-4">
+      <div class="w-9 h-9 bg-industrial-primary rounded border border-industrial-accent/50 flex items-center justify-center font-tech font-bold text-white tracking-widest text-lg shadow-inner">
+        HMI
+      </div>
+      <div>
+        <h1 class="text-base font-bold tracking-wider font-tech uppercase text-slate-100 flex items-center gap-2">
+          Sistema de Controle e Supervisão ESP32
+          <span class="text-xs bg-slate-800 text-slate-300 font-mono font-normal px-2 py-0.5 rounded border border-slate-700">v1.0-PROD</span>
+        </h1>
+        <p class="text-xs text-slate-400 font-mono tracking-tight flex items-center gap-2">
+          <span>CÉLULA DE MOTOR DE PASSO</span>
+        </p>
+      </div>
+    </div>
+
+    <!-- Status do Dispositivo ESP32 e Conexão -->
+    <div class="flex items-center gap-6 mt-2 sm:mt-0 font-mono text-xs">
+      <!-- Identificação do Dispositivo ESP32 -->
+      <div class="flex items-center gap-3 bg-slate-900/80 px-3.5 py-1.5 rounded border border-slate-700/80">
+        <div class="text-right">
+          <div class="text-[10px] text-slate-400 font-sans uppercase font-semibold">Dispositivo</div>
+          <div id="device-id-val" class="font-bold text-slate-200 text-sm tracking-wide">—</div>
+          <div id="device-meta-val" class="text-[10px] text-slate-400">—</div>
+        </div>
+        <div class="h-6 w-px bg-slate-700"></div>
+        <div class="flex items-center gap-2">
+          <span id="device-status-dot" class="relative flex h-3 w-3">
+            <span class="relative inline-flex rounded-full h-3 w-3 bg-slate-500"></span>
+          </span>
+          <span id="device-status-val" class="font-semibold text-emerald-400 text-xs uppercase tracking-wide">—</span>
+        </div>
+      </div>
+
+      <!-- Comunicação Geral / Servidor -->
+      <div class="hidden md:flex items-center gap-2.5 bg-slate-900/80 px-3 py-1.5 rounded border border-slate-700/80">
+        <div class="text-right">
+          <div class="text-[10px] text-slate-400 font-sans uppercase font-semibold">Comunicação</div>
+          <div id="comm-status-val" class="font-bold text-slate-200 text-xs flex items-center gap-1.5" data-state="offline">
+            <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+            <span>AGUARDANDO API</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <nav class="hmi-navigation" aria-label="Navegação principal">
+    <a class="hmi-navigation__link hmi-navigation__link--active" href="code.html">HMI</a>
+    <a class="hmi-navigation__link" href="orders.html">Ordens de Produção</a>
+  </nav>
+
+  <!-- ========================================== -->
+  <!-- 2. CORPO PRINCIPAL DO PAINEL OPERACIONAL   -->
+  <!-- ========================================== -->
+  <main class="flex-1 p-4 md:p-6 max-w-7xl w-full mx-auto flex flex-col gap-4">
+
+    <!-- ÁREA SUPERIOR: PROCESSO ATUAL (PEÇA, ORDEM DE PRODUÇÃO & ESTADO) -->
+    <section class="bg-industrial-panel rounded-lg border-2 border-industrial-panelBorder shadow-sm overflow-hidden">
+      <!-- Barra de Identificação de Seção -->
+      <div class="bg-slate-100 px-5 py-2 border-b border-industrial-panelBorder flex justify-between items-center">
+        <div class="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-industrial-textMuted font-mono">
+          <svg class="w-4 h-4 text-industrial-primary" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z" />
+          </svg>
+          Processo Atual & Identificação de Peça
+        </div>
+        <!-- Tag RFID Secundária / Diagnóstico -->
+        <div class="text-xs font-mono text-slate-600 bg-white px-2.5 py-0.5 rounded border border-slate-300 flex items-center gap-1.5">
+          <span class="text-[10px] text-slate-400 uppercase">RFID UID:</span>
+          <span id="rfid-uid-val" class="font-semibold text-industrial-textMain">—</span>
+          <span id="rfid-status-badge" class="w-2 h-2 rounded-full bg-emerald-500 inline-block" title="Aguardando identificação RFID"></span>
+        </div>
+      </div>
+
+      <!-- Conteúdo do Bloco de Processo Atual -->
+      <div class="p-5 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+
+        <!-- Coluna A (5 cols): Peça Atual (Maior Destaque) -->
+        <div class="lg:col-span-5 flex flex-col justify-center border-b lg:border-b-0 lg:border-r border-slate-200 pb-5 lg:pb-0 lg:pr-6">
+          <div class="text-xs uppercase font-bold tracking-wider text-industrial-primary font-mono mb-1 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-sm bg-industrial-primary inline-block"></span>
+            Peça Identificada
+          </div>
+          <div id="part-name-val" class="text-3xl md:text-4xl font-extrabold text-industrial-textMain tracking-tight leading-tight">
+            —
+          </div>
+          <div class="mt-2 flex items-center gap-3">
+            <span class="text-xs uppercase text-slate-500 font-mono font-medium">Código:</span>
+            <span id="part-code-val" class="font-mono text-sm font-bold bg-slate-100 text-slate-800 px-2 py-0.5 rounded border border-slate-300">
+              —
+            </span>
+            <span id="part-detail-val" class="text-xs text-slate-500 font-mono border-l border-slate-300 pl-3">
+              —
+            </span>
+          </div>
+        </div>
+
+        <!-- Coluna B (4 cols): Ordem de Produção & Progresso -->
+        <div class="lg:col-span-4 flex flex-col justify-center border-b lg:border-b-0 lg:border-r border-slate-200 pb-5 lg:pb-0 lg:pr-6">
+          <div class="text-xs uppercase font-bold tracking-wider text-slate-500 font-mono mb-1">
+            Ordem de Produção
+          </div>
+          <div id="op-number-val" class="text-2xl font-bold font-mono text-industrial-textMain tracking-wide">
+            —
+          </div>
+          <div class="text-[11px] font-mono text-slate-500 mt-1">Previsão: <span id="op-due-date">—</span></div>
+
+          <!-- Contagem de Produção Simples & Direta -->
+          <div class="mt-3 flex items-baseline justify-between">
+            <span class="text-xs font-semibold uppercase text-slate-600">Peças Produzidas</span>
+            <div class="font-mono text-base font-bold text-industrial-textMain">
+              <span id="op-produced-val" class="text-xl text-industrial-primary">—</span>
+              <span class="text-slate-400">/</span>
+              <span id="op-planned-val" class="text-slate-600">—</span>
+              <span class="text-xs text-slate-500 font-sans ml-1">unid.</span>
+            </div>
+          </div>
+          <!-- Barra de Progresso Operacional Discreta -->
+          <div class="w-full bg-slate-200 rounded-full h-2.5 mt-1.5 overflow-hidden">
+            <div id="op-progress-bar" class="bg-industrial-primary h-2.5 rounded-full transition-all duration-500 ease-out" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- Coluna C (3 cols): Estado do Processo (Indicador Principal) -->
+        <div class="lg:col-span-3 flex flex-col items-start lg:items-center justify-center bg-slate-50 p-4 rounded-lg border border-slate-200">
+          <div class="text-xs uppercase font-bold tracking-wider text-slate-500 font-mono mb-2 text-center w-full">
+            Status do Processo
+          </div>
+
+          <!-- Badge de Estado Amigável ao Operador -->
+      <div id="process-status-container" class="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-md bg-slate-100 border border-slate-300 text-slate-700 transition-colors duration-300">
+            <span id="process-status-dot" class="w-3.5 h-3.5 rounded-full bg-slate-500 shrink-0"></span>
+            <span id="process-status-text" class="text-base md:text-lg font-bold uppercase tracking-wide">
+              Aguardando dados
+            </span>
+          </div>
+
+          <div id="process-substatus-text" class="text-xs text-slate-600 font-mono mt-2 text-center">
+            Estado de execução indisponível pela API
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ÁREA CENTRAL: MOTOR DE PASSO & SUPERVISÃO EM TEMPO REAL -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+      <!-- BLOCO DO MOTOR DE PASSO (8 Colunas - Área Crítica de Operação) -->
+      <section class="lg:col-span-8 bg-industrial-panel rounded-lg border-2 border-industrial-panelBorder shadow-sm flex flex-col">
+        <!-- Título da Seção do Motor -->
+        <div class="bg-slate-100 px-5 py-2.5 border-b border-industrial-panelBorder flex justify-between items-center">
+          <div class="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-industrial-textMuted font-mono">
+            <svg class="w-4 h-4 text-industrial-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            MOTOR DE PASSO
+          </div>
+          <!-- Estado Atual do Motor -->
+          <div class="flex items-center gap-2">
+            <span class="text-xs uppercase text-slate-500 font-mono">Estado:</span>
+            <span id="motor-state-badge" class="font-mono text-xs font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">
+              —
+            </span>
+          </div>
+        </div>
+
+        <div class="p-5 md:p-6 grid grid-cols-1 md:grid-cols-12 gap-6 items-center flex-1">
+          <!-- Sub-bloco Visual Funcional do Motor (Disco / Ângulo / Posição) -->
+          <div class="md:col-span-5 flex flex-col items-center justify-center p-4 bg-slate-50 rounded-lg border border-slate-200">
+            <div class="relative w-36 h-36 flex items-center justify-center">
+              <!-- Círculo de graduação externa discreto -->
+              <svg class="absolute inset-0 w-full h-full text-slate-300" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2,4" />
+                <circle cx="50" cy="50" r="38" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5" />
+                <!-- Marcadores cardeais de 90° -->
+                <line x1="50" y1="6" x2="50" y2="12" stroke="#64748B" stroke-width="2" />
+                <line x1="50" y1="88" x2="50" y2="94" stroke="#64748B" stroke-width="2" />
+                <line x1="6" y1="50" x2="12" y2="50" stroke="#64748B" stroke-width="2" />
+                <line x1="88" y1="50" x2="94" y2="50" stroke="#64748B" stroke-width="2" />
+              </svg>
+              <!-- Rotor Indicador funcional com seta -->
+              <div id="motor-rotor-visual" class="relative w-24 h-24 rounded-full bg-slate-800 border-2 border-industrial-accent flex items-center justify-center shadow motor-rot-paused">
+                <div class="absolute -top-1 w-2.5 h-4 bg-industrial-accent rounded-sm shadow"></div>
+                <div class="w-8 h-8 rounded-full bg-slate-900 border border-slate-600 flex items-center justify-center">
+                  <div id="motor-running-indicator" class="w-2.5 h-2.5 rounded-full bg-slate-400"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Posição / Ângulo / Passos atual em destaque prioritário -->
+            <div class="mt-3 text-center">
+              <div class="text-[11px] uppercase font-bold text-slate-500 font-mono tracking-wider">Movimento configurado</div>
+              <div class="flex items-baseline justify-center gap-1 font-mono">
+                <span id="motor-position-primary" class="text-3xl font-extrabold text-industrial-textMain">—</span>
+                <span id="motor-position-unit" class="text-sm font-semibold text-industrial-primary">passos</span>
+                <span id="motor-position-degree" class="text-xs text-slate-400 ml-1"></span>
+              </div>
+              <div class="mt-1 text-[11px] text-slate-500 font-mono">Posição reportada: <span id="motor-actual-position">—</span>°</div>
+            </div>
+          </div>
+
+          <!-- Sub-bloco: Parâmetros e Telemetria do Motor de Passo -->
+          <div class="md:col-span-7 grid grid-cols-2 gap-3.5">
+            <!-- Direção -->
+            <div class="bg-white p-3 rounded border border-slate-200">
+              <div class="text-[10px] uppercase font-mono font-semibold text-slate-400">Direção</div>
+              <div id="motor-dir-val" class="font-bold text-base text-industrial-textMain flex items-center gap-1.5 mt-0.5">
+                <svg class="w-4 h-4 text-industrial-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span id="motor-dir-label">—</span>
+              </div>
+            </div>
+
+            <!-- Velocidade -->
+            <div class="bg-white p-3 rounded border border-slate-200">
+              <div class="text-[10px] uppercase font-mono font-semibold text-slate-400">Velocidade</div>
+              <div class="font-mono text-base font-bold text-industrial-textMain mt-0.5">
+                <span id="motor-speed-val">—</span> <span class="text-xs font-normal text-slate-500">passos/s</span>
+              </div>
+            </div>
+
+            <!-- Aceleração -->
+            <div class="bg-white p-3 rounded border border-slate-200">
+              <div class="text-[10px] uppercase font-mono font-semibold text-slate-400">Aceleração</div>
+              <div class="font-mono text-base font-bold text-industrial-textMain mt-0.5">
+                <span id="motor-accel-val">—</span> <span class="text-xs font-normal text-slate-500">passos/s²</span>
+              </div>
+            </div>
+
+            <!-- Quantidade de Movimentos Planejados -->
+            <div class="bg-white p-3 rounded border border-slate-200">
+              <div class="text-[10px] uppercase font-mono font-semibold text-slate-400">Movimentos do Ciclo</div>
+              <div class="font-mono text-base font-bold text-industrial-textMain mt-0.5">
+                <span id="motor-mov-planned-val">—</span> <span class="text-xs font-normal text-slate-500">movimentos</span>
+              </div>
+            </div>
+
+            <!-- Tempo de Espera entre Movimentos -->
+            <div class="bg-white p-3 rounded border border-slate-200 col-span-2 flex items-center justify-between">
+              <div>
+                <div class="text-[10px] uppercase font-mono font-semibold text-slate-400">Tempo de Espera (Hold)</div>
+                <div class="font-mono text-sm font-bold text-industrial-textMain">
+                  <span id="motor-wait-val">—</span> <span class="text-xs font-normal text-slate-500">ms</span>
+                </div>
+              </div>
+              <div class="text-right">
+                <div class="text-[10px] uppercase font-mono font-semibold text-slate-400">Ângulo configurado</div>
+                <div class="font-mono text-sm font-bold text-industrial-primary">
+                  <span id="motor-total-steps-val">—</span><span class="text-xs font-normal text-slate-500">°</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- BLOCO DE SUPERVISÃO EM TEMPO REAL (4 Colunas - Sensores do ESP32) -->
+      <section class="lg:col-span-4 bg-industrial-panel rounded-lg border-2 border-industrial-panelBorder shadow-sm flex flex-col">
+        <!-- Título da Seção -->
+        <div class="bg-slate-100 px-5 py-2.5 border-b border-industrial-panelBorder flex justify-between items-center">
+          <div class="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-industrial-textMuted font-mono">
+            <svg class="w-4 h-4 text-industrial-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            SUPERVISÃO
+          </div>
+          <span class="text-[10px] font-mono text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-300">
+            TEMPERATURA OPCIONAL
+          </span>
+        </div>
+
+        <div class="p-5 flex-1 flex flex-col justify-around gap-4">
+          <!-- Sensor Primário: Temperatura do Driver / ESP32 -->
+          <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 flex items-center justify-between">
+            <div>
+              <span class="text-xs uppercase font-bold text-slate-500 font-mono block">Temperatura</span>
+              <div class="flex items-baseline gap-1 mt-1 font-mono">
+                <span id="sensor-temp-val" class="text-3xl font-extrabold text-industrial-textMain">—</span>
+                <span class="text-lg font-bold text-slate-600">°C</span>
+              </div>
+              <span class="text-[11px] text-emerald-600 font-semibold font-mono flex items-center gap-1 mt-0.5">
+                Leitura opcional informada pela API
+              </span>
+            </div>
+            <!-- Ícone térmico discreto -->
+            <div class="w-12 h-12 bg-white rounded-full border border-slate-200 flex items-center justify-center text-slate-500 shadow-sm">
+              <svg class="w-6 h-6 text-industrial-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          </div>
+
+          <!-- Sensor Secundário / Slot Preparado: Tensão de Alimentação 24V -->
+          <div class="bg-slate-50 p-3.5 rounded-lg border border-slate-200 flex items-center justify-between">
+            <div>
+              <span class="text-[11px] uppercase font-bold text-slate-500 font-mono block">Tensão do barramento</span>
+              <div class="flex items-baseline gap-1 font-mono">
+                <span id="sensor-voltage-val" class="text-xl font-bold text-industrial-textMain">—</span>
+                <span class="text-xs font-semibold text-slate-600">V CC</span>
+              </div>
+            </div>
+            <span class="text-[10px] font-mono px-2 py-1 rounded bg-slate-200 text-slate-700 font-semibold">
+              Sem leitura da API
+            </span>
+          </div>
+
+          <!-- Diagnóstico ESP32 Resumido (Sem poluição técnica) -->
+          <div class="text-[11px] font-mono text-slate-500 bg-white p-2.5 rounded border border-slate-200 flex items-center justify-between">
+            <span>Última telemetria:</span>
+            <span id="last-ping-val" class="font-bold text-slate-700">—</span>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ÁREA INFERIOR 1: EXECUÇÃO DA PRODUÇÃO (PROGRESSO DOS MOVIMENTOS E PASSOS) -->
+    <section class="bg-industrial-panel rounded-lg border-2 border-industrial-panelBorder shadow-sm px-6 py-4">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+
+        <!-- Identificação do Ciclo de Execução -->
+        <div class="flex items-center gap-3">
+          <div class="w-2.5 h-8 bg-industrial-primary rounded-sm"></div>
+          <div>
+            <div class="text-xs uppercase font-bold font-mono text-slate-500">Execução (telemetria)</div>
+            <div class="text-sm font-mono text-slate-700">
+              Dispositivo <strong id="exec-device-id" class="text-industrial-textMain">—</strong> • Status: <strong id="exec-status-badge" class="text-emerald-700 uppercase">Execução indisponível</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Métricas Rápidas: Movimentos Executados & Passos Executados -->
+        <div class="flex flex-wrap items-center gap-6 md:gap-10 font-mono">
+          <!-- Movimentos -->
+          <div class="flex items-baseline gap-2">
+            <span class="text-xs uppercase text-slate-500 font-sans font-semibold">Movimentos:</span>
+            <span id="exec-mov-current" class="text-2xl font-bold text-industrial-primary">—</span>
+            <span class="text-slate-400 text-lg">/</span>
+            <span id="exec-mov-total" class="text-lg font-bold text-slate-600">—</span>
+          </div>
+
+          <div class="hidden sm:block h-6 w-px bg-slate-300"></div>
+
+          <!-- Passos -->
+          <div class="flex items-baseline gap-2">
+            <span class="text-xs uppercase text-slate-500 font-sans font-semibold">Passos:</span>
+            <span id="exec-steps-current" class="text-2xl font-bold text-industrial-primary">—</span>
+            <span class="text-slate-400 text-lg">/</span>
+            <span id="exec-steps-total" class="text-lg font-bold text-slate-600">—</span>
+          </div>
+
+          <div class="hidden sm:block h-6 w-px bg-slate-300"></div>
+
+          <!-- Porcentagem do Ciclo Atual -->
+          <div class="flex items-center gap-2">
+            <span class="text-xs uppercase text-slate-500 font-sans font-semibold">Ciclo:</span>
+            <span id="exec-pct-val" class="text-lg font-extrabold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-300">—</span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ÁREA INFERIOR 2: CONTROLES OPERACIONAIS INDUSTRIAIS (INICIAR & STOP) -->
+    <section class="bg-industrial-panel rounded-lg border-2 border-industrial-panelBorder shadow-sm p-4 flex flex-wrap items-center justify-between gap-4">
+
+      <!-- Mensagens Operacionais Rápidas / Alertas -->
+      <div id="operator-prompt-msg" class="flex items-center gap-3 text-sm text-slate-700 font-medium">
+        <span class="flex h-3 w-3 relative">
+          <span class="relative inline-flex rounded-full h-3 w-3 bg-slate-400"></span>
+        </span>
+        <span id="operator-prompt-text">Aguardando dados da API de supervisão.</span>
+      </div>
+
+      <!-- Botoeira Operacional HMI -->
+      <div class="flex items-center gap-4 ml-auto">
+        <!-- BOTÃO INICIAR -->
+        <button id="btn-iniciar" disabled title="A API atual não oferece comando para iniciar a execução" class="h-12 px-8 bg-industrial-primary hover:bg-industrial-primaryHover active:scale-95 text-white font-bold text-base tracking-wider uppercase rounded border-b-4 border-industrial-primaryHover shadow transition-all flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-industrial-primary focus:ring-offset-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>INICIAR</span>
+        </button>
+
+        <!-- BOTÃO STOP (MÁXIMO DESTAQUE VISUAL PARA PARADA DE EMERGÊNCIA/OPERACIONAL) -->
+        <button id="btn-stop" disabled title="A API atual não oferece comando para parar a execução" class="h-12 px-9 bg-status-danger hover:bg-red-700 active:scale-95 text-white font-bold text-base tracking-wider uppercase rounded border-b-4 border-red-900 shadow-md transition-all flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+          <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+            <rect x="5" y="5" width="10" height="10" rx="1.5" />
+          </svg>
+          <span>STOP</span>
+        </button>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ========================================== -->
+  <!-- 3. RODAPÉ TÉCNICO RESUMIDO                 -->
+  <!-- ========================================== -->
+  <footer class="bg-slate-200 text-slate-600 px-6 py-2 border-t border-slate-300 text-[11px] font-mono flex flex-wrap justify-between items-center shrink-0">
+    <div class="flex items-center gap-4">
+      <span>FLUXO OPERACIONAL: RFID → PEÇA → ORDEM DE PRODUÇÃO → MOTOR DE PASSO → EXECUÇÃO ESP32</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <span>API: <strong id="api-status-val" class="text-slate-800" data-state="offline">AGUARDANDO</strong></span>
+      <span>•</span>
+      <span>HMI</span>
+    </div>
+  </footer>
+
+  <script src="js/api.js" defer></script>
+  <script src="js/app.js" defer></script>
+</body>
+</html>

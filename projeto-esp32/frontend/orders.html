@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f1e36">
+  <title>Cadastro de Ordem de Produção | HMI ESP32</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/orders.css">
+</head>
+<body class="order-page">
+  <header class="order-header">
+    <a class="order-brand" href="code.html" aria-label="Voltar para a HMI">
+      <span class="order-brand__mark">HMI</span>
+      <span class="order-brand__text">
+        <strong>Sistema de Controle e Supervisão ESP32</strong>
+        <small>CÉLULA DE MOTOR DE PASSO</small>
+      </span>
+    </a>
+    <div class="order-header__status"><span></span> CADASTRO DE PRODUÇÃO</div>
+  </header>
+
+  <nav class="hmi-navigation" aria-label="Navegação principal">
+    <a class="hmi-navigation__link" href="code.html">HMI</a>
+    <a class="hmi-navigation__link hmi-navigation__link--active" href="orders.html" aria-current="page">Ordens de Produção</a>
+  </nav>
+
+  <main class="order-main">
+    <div class="page-heading">
+      <div>
+        <div class="eyebrow"><span></span> PLANEJAMENTO · CONFIGURAÇÃO</div>
+        <h1>Cadastro de Ordem de Produção</h1>
+        <p>Associe uma peça e tags RFID às instruções do Motor de Passo.</p>
+      </div>
+      <a class="button button--quiet" href="code.html">Voltar para HMI</a>
+    </div>
+
+    <div class="draft-notice" role="status">
+      <span class="notice-icon" aria-hidden="true">i</span>
+      <p><strong>Modo de rascunho:</strong> a API atual não oferece cadastro de ordens, listagem de peças nem vínculo RFID por ordem. O schema existente relaciona RFID à peça e escolhe a ordem a partir dela; o vínculo direto UID → ordem solicitado aqui ainda exige suporte no backend/banco. Os dados preparados ficam neste navegador e não são enviados ao PostgreSQL.</p>
+    </div>
+    <div id="parts-notice" class="parts-notice" role="status"></div>
+
+    <form id="order-form" novalidate>
+      <section class="form-card" aria-labelledby="order-section-title">
+        <div class="section-heading">
+          <span class="section-index">01</span>
+          <div><h2 id="order-section-title">Dados da ordem</h2><p>Identificação, planejamento e peça a produzir.</p></div>
+        </div>
+
+        <div class="form-grid">
+          <label class="field">
+            <span>Número da ordem <b>*</b></span>
+            <input id="numero_ordem" name="numero_ordem" type="text" maxlength="50" placeholder="OP-2026-00127" autocomplete="off" required>
+          </label>
+          <label class="field field--wide">
+            <span>Peça <b>*</b></span>
+            <select id="peca_id" name="peca_id" required>
+              <option value="">Selecione uma peça</option>
+            </select>
+            <small id="part-help">Selecione uma peça já cadastrada.</small>
+          </label>
+
+          <div id="part-details" class="part-details field--full" hidden>
+            <div><span>CÓDIGO</span><strong id="part-code">—</strong></div>
+            <div><span>NOME</span><strong id="part-name">—</strong></div>
+            <div><span>MATERIAL</span><strong id="part-material">—</strong></div>
+            <div><span>TAMANHO</span><strong id="part-size">—</strong></div>
+          </div>
+
+          <label class="field">
+            <span>Quantidade planejada <b>*</b></span>
+            <input id="quantidade_planejada" name="quantidade_planejada" type="number" min="1" step="1" value="100" required>
+          </label>
+          <label class="field">
+            <span>Quantidade produzida</span>
+            <input id="quantidade_produzida" name="quantidade_produzida" type="number" min="0" step="1" value="0" required>
+          </label>
+          <label class="field">
+            <span>Status</span>
+            <select id="status" name="status">
+              <option value="PENDENTE">Pendente</option>
+              <option value="EM_EXECUCAO">Em execução</option>
+              <option value="CONCLUIDA">Concluída</option>
+              <option value="CANCELADA">Cancelada</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Prioridade</span>
+            <select id="prioridade" name="prioridade">
+              <option value="1">1 · Mais alta</option>
+              <option value="2">2 · Alta</option>
+              <option value="3" selected>3 · Normal</option>
+              <option value="4">4 · Baixa</option>
+              <option value="5">5 · Mais baixa</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Data de início</span>
+            <input id="data_inicio" name="data_inicio" type="datetime-local">
+          </label>
+          <label class="field">
+            <span>Data de previsão</span>
+            <input id="data_previsao" name="data_previsao" type="datetime-local">
+          </label>
+          <label class="field field--full">
+            <span>Observação</span>
+            <textarea id="observacao" name="observacao" rows="3" placeholder="Informações adicionais para esta ordem"></textarea>
+          </label>
+        </div>
+      </section>
+
+      <section class="form-card" aria-labelledby="rfid-section-title">
+        <div class="section-heading">
+          <span class="section-index">02</span>
+          <div><h2 id="rfid-section-title">Vínculo das tags RFID</h2><p>As tags adicionadas neste rascunho apontam para esta ordem.</p></div>
+        </div>
+        <div class="rfid-entry">
+          <label class="field" for="rfid-uid">
+            <span>UID hexadecimal</span>
+            <input id="rfid-uid" type="text" maxlength="32" placeholder="04AABBCCDD" autocomplete="off" spellcheck="false" aria-describedby="rfid-help">
+            <small id="rfid-help">Bytes hexadecimais, com separador “:” opcional. Ex.: 04:AA:BB:CC:DD.</small>
+          </label>
+          <button id="add-rfid" class="button button--secondary" type="button">Adicionar RFID</button>
+        </div>
+        <div id="rfid-list" class="rfid-list" aria-live="polite"></div>
+        <p id="rfid-error" class="field-error" role="alert" hidden></p>
+      </section>
+
+      <section class="form-card" aria-labelledby="motor-section-title">
+        <div class="section-heading">
+          <span class="section-index">03</span>
+          <div><h2 id="motor-section-title">Instruções do Motor de Passo</h2><p>Parâmetros preparados para a ordem selecionada.</p></div>
+        </div>
+
+        <fieldset class="movement-choice">
+          <legend>Tipo de movimento</legend>
+          <label class="choice-card"><input type="radio" name="tipo_movimento" value="passos" checked><span class="choice-dot"></span><span><strong>Por passos</strong><small>Define o deslocamento pelo número de passos.</small></span></label>
+          <label class="choice-card"><input type="radio" name="tipo_movimento" value="angulo"><span class="choice-dot"></span><span><strong>Por ângulo</strong><small>Define o deslocamento em graus.</small></span></label>
+        </fieldset>
+
+        <div class="form-grid motor-grid">
+          <label id="steps-field" class="field">
+            <span>Quantidade de passos <b>*</b></span>
+            <input id="passos" name="passos" type="number" min="1" step="1" value="200">
+            <small>passos</small>
+          </label>
+          <label id="angle-field" class="field" hidden>
+            <span>Ângulo <b>*</b></span>
+            <div class="input-unit"><input id="angulo" name="angulo" type="number" min="0.001" step="0.001" value="90" disabled><span>graus</span></div>
+          </label>
+          <label class="field">
+            <span>Direção <b>*</b></span>
+            <select id="direcao" name="direcao" required>
+              <option value="HORARIO">Horário</option>
+              <option value="ANTIHORARIO">Anti-horário</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Velocidade <b>*</b></span>
+            <div class="input-unit"><input id="velocidade" name="velocidade" type="number" min="0.001" step="0.001" value="500" required><span>passos/s</span></div>
+          </label>
+          <label class="field">
+            <span>Aceleração</span>
+            <div class="input-unit"><input id="aceleracao" name="aceleracao" type="number" min="0.001" step="0.001" placeholder="Opcional"><span>passos/s²</span></div>
+          </label>
+          <label class="field">
+            <span>Tempo de espera</span>
+            <div class="input-unit"><input id="tempo_espera_ms" name="tempo_espera_ms" type="number" min="0" step="1" value="0" required><span>ms</span></div>
+          </label>
+          <label class="field">
+            <span>Quantidade de movimentos <b>*</b></span>
+            <input id="quantidade_movimentos" name="quantidade_movimentos" type="number" min="1" step="1" value="1" required>
+          </label>
+          <label class="active-option">
+            <input id="motor-ativo" name="ativo" type="checkbox" checked>
+            <span class="checkbox-mark"></span>
+            <span><strong>Configuração ativa</strong><small>Disponível para esta ordem.</small></span>
+          </label>
+        </div>
+      </section>
+
+      <section class="form-card summary-card" aria-labelledby="summary-title">
+        <div class="section-heading">
+          <span class="section-index">04</span>
+          <div><h2 id="summary-title">Resumo do rascunho</h2><p>Revise os dados antes de preparar o registro.</p></div>
+        </div>
+        <dl class="summary-grid">
+          <div><dt>Ordem</dt><dd id="summary-order">—</dd></div>
+          <div><dt>Peça</dt><dd id="summary-part">Selecione uma peça</dd></div>
+          <div><dt>Quantidade</dt><dd id="summary-quantity">0 / 100</dd></div>
+          <div><dt>Prioridade</dt><dd id="summary-priority">3 · Normal</dd></div>
+          <div><dt>Status</dt><dd id="summary-status">Pendente</dd></div>
+          <div><dt>RFIDs vinculados</dt><dd id="summary-rfids">Nenhuma tag</dd></div>
+          <div class="summary-grid__motor"><dt>Motor de Passo</dt><dd id="summary-motor">200 passos · Horário · 500 passos/s · 0 ms · 1 movimento</dd></div>
+        </dl>
+        <div class="form-actions">
+          <button id="cancel-form" class="button button--quiet" type="reset">Limpar formulário</button>
+          <button id="prepare-order" class="button button--primary" type="submit">Preparar rascunho</button>
+        </div>
+        <div id="form-feedback" class="form-feedback" role="status" aria-live="polite" hidden></div>
+      </section>
+    </form>
+
+    <section class="form-card saved-card" aria-labelledby="saved-title">
+      <div class="section-heading section-heading--between">
+        <div class="section-heading__title"><span class="section-index">LOCAL</span><div><h2 id="saved-title">Rascunhos neste navegador</h2><p>Preparados aqui; ainda não persistidos no banco.</p></div></div>
+        <button id="export-drafts" class="button button--quiet button--small" type="button">Baixar JSON</button>
+      </div>
+      <div id="draft-list" class="draft-list"></div>
+    </section>
+  </main>
+
+  <footer class="order-footer">
+    <span>FLUXO PREPARADO: RFID → ORDEM → MOTOR DE PASSO → ESP32</span>
+    <span>API DE CADASTRO: NÃO DISPONÍVEL</span>
+  </footer>
+
+  <script src="js/orders.js" defer></script>
+</body>
+</html>
